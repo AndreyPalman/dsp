@@ -1,8 +1,8 @@
-
 import com.amazonaws.services.sqs.model.Message;
-import com.google.gson.Gson;
 
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.util.*;
 
 public class Local {
@@ -11,19 +11,17 @@ public class Local {
 
     public static String inputFileName = "";
     public static String outputFileName = "";
-    public static int numberOfWorkers = 0;
+    public static int numberOfMessagesPerWorker = 0;
     public static boolean shouldTerminate = false;
 
     public static String fullPathToInputFile = "";
+    public static String fullPathToOutputFile = "";
     public static File inputFile;
     public static String filePathInS3 = "";
 
     public static boolean ProcessDoneMessageArrive = false;
 
-
     public static void main(String[] args) {
-
-
 
         // Read Input Folder Path
         parseArguments(args);
@@ -40,23 +38,39 @@ public class Local {
         awsBundle.uploadFileToS3(AwsBundle.bucketName,inputFileName,inputFile);
 
         // Send message to an SQS queue, with the location of the file on S3
-        String queueUrl = awsBundle.createMsgQueue(awsBundle.requestsAppsQueueName);
-        awsBundle.sendMessage(queueUrl,createMessage("New Task",filePathInS3, AwsBundle.Delimiter));
+        String queueUrl = awsBundle.createMsgQueue(awsBundle.localAndManagerQueueName);
+        awsBundle.sendMessage(queueUrl,awsBundle.createMessage("NewTask",filePathInS3));
 
         // Checks an SQS queue for messages indicating the process is done and response ( summery file ) is available on S3
         while (!ProcessDoneMessageArrive) {
             List<Message> messages = awsBundle.fetchNewMessages(queueUrl);
             for (Message message : messages) {
-                if (message.getBody().equals("Process Done")) {
+                if (message.getBody().split(AwsBundle.Delimiter)[0].equals("ProcessDone")) {
                     ProcessDoneMessageArrive = true;
+                } else {
+                    String fileUrlInS3 = message.getBody().split(AwsBundle.Delimiter)[1].split("//")[1];
+                    String bucketName = fileUrlInS3.split("/")[0];
+                    String fileName = fileUrlInS3.split("/")[1];
+                    InputStream downloadedFileStream = awsBundle.downloadFileFromS3(bucketName, fileName);
+                    try {
+                        Files.copy(downloadedFileStream, Paths.get(fullPathToOutputFile));
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    finally {
+                        awsBundle.deleteFileFromS3(AwsBundle.bucketName,inputFileName);
+                        awsBundle.deleteQueue(awsBundle.localAndManagerQueueName);
+                    }
                 }
             }
         }
-        // Creates an html file representing the summery results
+
+        // Creates a html file representing the summery results
+
 
         // In case of terminate mode, sends a termination message to Manager
         if(shouldTerminate) {
-            awsBundle.sendMessage(queueUrl,createMessage("Terminate","",AwsBundle.Delimiter));
+            awsBundle.sendMessage(queueUrl,awsBundle.createMessage("Terminate",""));
         }
 
     }
@@ -71,9 +85,10 @@ public class Local {
         if (args.length == 3 || args.length == 4) {
             inputFileName = args[0];
             outputFileName = args[1];
-            numberOfWorkers = Integer.parseInt(args[2]);
+            numberOfMessagesPerWorker = Integer.parseInt(args[2]);
 
             fullPathToInputFile = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\src\\Input\\" + inputFileName;
+            fullPathToOutputFile = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\src\\Output\\" + outputFileName;
             filePathInS3 = "S3://" + AwsBundle.bucketName + "/" + inputFileName;
             inputFile = new File(fullPathToInputFile);
             if (!isLegalFileSize(inputFile))
@@ -110,11 +125,6 @@ public class Local {
 
         awsBundle.createInstance("Manager",AwsBundle.ami,managerScript);
     }
-
-    private static String createMessage(String type, String filePath,String delimiter){
-        return type + filePath + delimiter;
-    }
-
 
 }
 

@@ -19,15 +19,15 @@ import java.util.List;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class AwsBundle {
-    private static final int MAX_INSTANCES = 19;
+    public static final int MAX_INSTANCES = 19;
     public static final long maxFileSize = 10000000;
     private final AmazonEC2 ec2;
     private final AmazonS3 s3;
     private final AmazonSQS sqs;
 
 
-    public final String requestsAppsQueueName = "requestsAppsQueue";
-    public final String requestsWorkersQueueName = "requestsWorkersQueue";
+    public final String localAndManagerQueueName = "localToManagerQueueName";
+    public final String managerAndWorkerQueueName = "managerAndWorkerQueueName";
     public final String resultsWorkersQueueName = "resultsWorkersQueue";
 
     public static final String bucketName = "dspassignment1andreypalmans3bucket";
@@ -43,7 +43,7 @@ public class AwsBundle {
     public final int uniqueLocalFilePath = 1;
     public final int outputFilepath = 2;
     public final int workersRatio = 3;
-    static final String Delimiter = "X";
+    static final String Delimiter = "_";
 
     //message from worker
     public final int urlIndex = 0;
@@ -211,6 +211,10 @@ public class AwsBundle {
 
     public void deleteMessageFromQueue(String queueUrl, Message message) {
         this.sqs.deleteMessage(new DeleteMessageRequest(queueUrl, message.getReceiptHandle()));
+    }
+
+    public String createMessage(String type, String filePath){
+        return type + AwsBundle.Delimiter + filePath;
     }
 
     //endregion
