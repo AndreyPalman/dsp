@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
 
-public class Manager {
+public class Manager extends Thread{
     final static AwsBundle awsBundle = AwsBundle.getInstance();
 
     public boolean shouldTerminate = false;
