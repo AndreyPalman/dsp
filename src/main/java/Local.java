@@ -28,7 +28,6 @@ public class Local {
     public static boolean ProcessDoneMessageArrive = false;
 
     public static void main(String[] args) {
-        // Read Input Folder Path
         parseArguments(args);
 
         // Check if Manager node is active
