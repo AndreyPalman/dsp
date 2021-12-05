@@ -33,17 +33,14 @@ public class LocalApp {
         bucketName = AwsBundle.bucketName;
         parseArguments(args);
 
-//        Manager manager = new Manager();
-//        manager.start();
-
         // Check if Manager node is active
         // If not, create Manager node
-//        if(!awsBundle.checkIfInstanceExist("Manager"))
-//        {
-//                createManager();
-//        }
+        if(!awsBundle.checkIfInstanceExist("Manager"))
+        {
+                createManager();
+        }
         UUID localAppUuid = UUID.randomUUID();
-        //bucketName = (AwsBundle.bucketName + localAppUuid.toString().toLowerCase()).toLowerCase();
+        bucketName = (AwsBundle.bucketName + localAppUuid.toString().toLowerCase()).toLowerCase();
 
 
         // Upload input file to S3
