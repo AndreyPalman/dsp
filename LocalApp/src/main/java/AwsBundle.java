@@ -27,32 +27,13 @@ public class AwsBundle {
 
 
     public final String localAndManagerQueueName = "localToManagerQueueName";
-    public final String managerAndWorkerQueueName = "managerAndWorkerQueueName";
-    public final String resultsWorkersQueueName = "resultsWorkersQueue";
 
     public static final String bucketName = "dspassignment1andreypalmans3bucket";
-    public static final String inputFolder = "../../Input/";
-    public static final String outputFolder = "../../Output/";
-    public static final String resultQueuePrefix = "resultQueue_";
-
 
     public static final String ami = "ami-00e95a9222311e8ed";
 
     //message from local
-    public final int messageType = 0;
-    public final int uniqueLocalFilePath = 1;
-    public final int outputFilepath = 2;
-    public final int workersRatio = 3;
     static final String Delimiter = "__";
-
-    //message from worker
-    public final int urlIndex = 0;
-    public final int textIndex = 1;
-
-    //message to worker
-    public final int localIdIndex = 0;
-    public final int lineNumberIndex = 1;
-    public final int urlWorkerIndex = 2;
 
 
     private static final AwsBundle instance = new AwsBundle();

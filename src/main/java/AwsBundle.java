@@ -31,7 +31,7 @@ public class AwsBundle {
     public final String resultsWorkersQueueName = "resultsWorkersQueue";
 
     public static final String bucketName = "dspassignment1andreypalmans3bucket";
-    public static final String inputFolder = "../../Input/";
+    public static final String inputFolder = "src/Input/";
     public static final String outputFolder = "../../Output/";
     public static final String resultQueuePrefix = "resultQueue_";
 
