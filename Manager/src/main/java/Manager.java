@@ -5,30 +5,26 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class Manager extends Thread  {
 
+public class Manager {
 
     final static AwsBundle awsBundle = AwsBundle.getInstance();
 
-    public ConcurrentHashMap<String, Integer> LocalRequests = new ConcurrentHashMap<>();
-    public ConcurrentHashMap<String, String> LocalQueues = new ConcurrentHashMap<>();
-    public ConcurrentHashMap<String, List<Triplet<String, String, String>>> LocalDoneTasks = new ConcurrentHashMap();
+    public static ConcurrentHashMap<String, Integer> LocalRequests = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, String> LocalQueues = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, List<Triplet<String, String, String>>> LocalDoneTasks = new ConcurrentHashMap();
 
 
-    public boolean shouldTerminate = false;
-    public int numberOfMessagesPerWorker = 100;
-    public int activeWorkers = 0;
+    public static boolean shouldTerminate = false;
+    public static int numberOfMessagesPerWorker = 100;
+    public static int activeWorkers = 0;
     public Worker worker = new Worker();
 
-    public void run() {
-
-
+    public static void main(String[] args){
         String ManagerAndWorkerQueueUrl = awsBundle.createMsgQueue(awsBundle.managerAndWorkerQueueName);
         String LocalAndManagerQueueUrl = awsBundle.getQueueUrl(awsBundle.localAndManagerQueueName);
         String localAppName = "";
@@ -91,8 +87,7 @@ public class Manager extends Thread  {
         }
     }
 
-
-    private void createSummaryReport(String localAppName){
+    private static void createSummaryReport(String localAppName){
         String text = "";
         List<Triplet<String,String,String>> doneTasks = LocalDoneTasks.get(localAppName);
         PrintWriter writer = null;
@@ -128,7 +123,7 @@ public class Manager extends Thread  {
                 awsBundle.createMessage("DoneTask","summery.txt"));
     }
 
-    private void startWorkersAccordinglyToSqsMessageCount() {
+    private static void startWorkersAccordinglyToSqsMessageCount() {
         List<Message> messages = awsBundle.fetchNewMessages(awsBundle.managerAndWorkerQueueName);
         int numberOfMessages = messages.size();
         int numberOfWorkersNeeded = Math.min(AwsBundle.MAX_INSTANCES, Math.max(1,numberOfMessages / numberOfMessagesPerWorker));
@@ -141,7 +136,7 @@ public class Manager extends Thread  {
 
     }
 
-    public void createSqsMessagesForEachUrl(String fileName, String localAppName){
+    public static void createSqsMessagesForEachUrl(String fileName, String localAppName){
         File inputFile = new File(fileName);
         int numberOfTasks = 0;
         try (BufferedReader br = new BufferedReader(new FileReader(inputFile))) {
@@ -173,5 +168,4 @@ public class Manager extends Thread  {
 
         LocalRequests.put(localAppName, numberOfTasks);
     }
-
 }

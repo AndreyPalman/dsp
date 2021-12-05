@@ -1,18 +1,10 @@
 import com.amazonaws.services.sqs.model.Message;
-import org.apache.pdfbox.multipdf.Splitter;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
 import java.io.*;
-import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
-import java.util.Locale;
 import java.util.Scanner;
 import java.util.UUID;
 
@@ -37,6 +29,11 @@ public class Local {
     public static boolean ProcessDoneMessageArrive = false;
 
     public static void main(String[] args) {
+
+        String UserDataScript = "#! /bin/bash\n" +
+                "echo Andrey Instance Is Up!!!!!!!!!!!!!!!!!!!!!!\n";
+        awsBundle.createInstance("Andrey",AwsBundle.ami,UserDataScript);
+
 
         bucketName = AwsBundle.bucketName;
         parseArguments(args);
