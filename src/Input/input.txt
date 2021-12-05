@@ -1,0 +1,3 @@
+ToImage	http://www.eszter.com/Haggadah.pdf
+ToText	http://www.ahavathtorah.org/docs/passover_06.pdf
+ToHTML	http://www.zionministry.com/passover_chart.pdf

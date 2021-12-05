@@ -1,12 +1,20 @@
 import com.amazonaws.services.sqs.model.Message;
 import org.apache.pdfbox.multipdf.Splitter;
 import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.rendering.PDFRenderer;
+import org.apache.pdfbox.text.PDFTextStripper;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.*;
+import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.Locale;
 import java.util.Scanner;
+import java.util.UUID;
 
 public class Local {
 
@@ -22,13 +30,19 @@ public class Local {
     public static File inputFile;
     public static String filePathInS3 = "";
 
+    public static String bucketName = "";
     public static final String INPUT_DIR_PATH = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\src\\Input\\";
     public static final String OUTPUT_DIR_PATH = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\src\\Output\\";
 
     public static boolean ProcessDoneMessageArrive = false;
 
     public static void main(String[] args) {
+
+        bucketName = AwsBundle.bucketName;
         parseArguments(args);
+
+        Manager manager = new Manager();
+        manager.start();
 
         // Check if Manager node is active
         // If not, create Manager node
@@ -36,35 +50,37 @@ public class Local {
 //        {
 //                createManager();
 //        }
+        UUID localAppUuid = UUID.randomUUID();
+        //bucketName = (AwsBundle.bucketName + localAppUuid.toString().toLowerCase()).toLowerCase();
+
 
         // Upload input file to S3
-        awsBundle.createBucketIfNotExists(AwsBundle.bucketName);
-        awsBundle.uploadFileToS3(AwsBundle.bucketName,inputFileName,inputFile);
+        awsBundle.createBucketIfNotExists(bucketName);
+        awsBundle.uploadFileToS3(bucketName,inputFileName,inputFile);
 
         // Send message to an SQS queue, with the location of the file on S3
         String queueUrl = awsBundle.createMsgQueue(awsBundle.localAndManagerQueueName);
-        awsBundle.sendMessage(queueUrl,awsBundle.createMessage("NewTask",filePathInS3));
+        awsBundle.sendMessage(queueUrl,awsBundle.createMessage("NewTask",localAppUuid + AwsBundle.Delimiter +filePathInS3));
 
         // Checks an SQS queue for messages indicating the process is done and response ( summery file ) is available on S3
         while (!ProcessDoneMessageArrive) {
             List<Message> messages = awsBundle.fetchNewMessages(queueUrl);
             for (Message message : messages) {
-                if (message.getBody().split(AwsBundle.Delimiter)[0].equals("ProcessDone")) {
+                if (message.getBody().split(AwsBundle.Delimiter)[0].equals("DoneTask")) {
                     ProcessDoneMessageArrive = true;
-                } else {
-                    String fileUrlInS3 = message.getBody().split(AwsBundle.Delimiter)[1].split("//")[1];
-                    String bucketName = fileUrlInS3.split("/")[0];
-                    String fileName = fileUrlInS3.split("/")[1];
-                    InputStream downloadedFileStream = awsBundle.downloadFileFromS3(bucketName, fileName);
+                    String fileUrlInS3 = message.getBody().split(AwsBundle.Delimiter)[1];
+
+                    InputStream downloadedFileStream = awsBundle.downloadFileFromS3(bucketName, fileUrlInS3);
                     try {
-                        Files.copy(downloadedFileStream, Paths.get(fullPathToOutputFile));
+                        Files.copy(downloadedFileStream, Paths.get(fullPathToOutputFile), StandardCopyOption.REPLACE_EXISTING);
                     } catch (IOException e) {
                         e.printStackTrace();
                     }
-                    finally {
-                        awsBundle.deleteFileFromS3(AwsBundle.bucketName,inputFileName);
-                        awsBundle.deleteQueue(awsBundle.localAndManagerQueueName);
-                    }
+
+                    createOutputFile(fullPathToOutputFile);
+
+                    awsBundle.deleteMessageFromQueue(queueUrl, message);
+                    awsBundle.deleteQueue(queueUrl);
                 }
             }
         }
@@ -93,7 +109,7 @@ public class Local {
 
             fullPathToInputFile = INPUT_DIR_PATH + inputFileName;
             fullPathToOutputFile = OUTPUT_DIR_PATH + outputFileName;
-            filePathInS3 = "S3://" + AwsBundle.bucketName + "/" + inputFileName;
+            filePathInS3 = "S3://" + bucketName + "/" + inputFileName;
             inputFile = new File(fullPathToInputFile);
             if (!isLegalFileSize(inputFile))
             {
@@ -139,11 +155,14 @@ public class Local {
         try {
             sc = new Scanner(file);
             while (sc.hasNextLine()) {
-                String[] line = sc.nextLine().split(" ");
-                String operation = line[0];
-                String input = line[1];
-                String output = line[2];
-                htmlBody.append("<tr>").append("<th>").append(operation).append("</th>").append("<th>" + input + "</th>").append("<th>" + output + "</th>").append("</tr>");
+                String[] line = sc.nextLine().split(AwsBundle.Delimiter);
+                try {
+                    String operation = line[1];
+                    String input = line[2];
+                    String output = line[0];
+                    htmlBody.append("<tr>").append("<th>").append(operation).append("</th>").append("<th>").append(input).append("</th>").append("<th>").append("s3://").append(bucketName).append("/").append(output).append("</th>").append("</tr>");
+                }
+                catch (ArrayIndexOutOfBoundsException ignored) {}
             }
         } catch (FileNotFoundException e) {
             e.printStackTrace();
@@ -151,7 +170,7 @@ public class Local {
 
         FileWriter myWriter = null;
         try {
-            myWriter = new FileWriter("./example.html");
+            myWriter = new FileWriter("./output.html");
             try {
                 myWriter.write(htmlPageOpening + htmlBody + htmlPageEnding);
             } catch (IOException e) {

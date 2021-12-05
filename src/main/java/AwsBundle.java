@@ -43,7 +43,7 @@ public class AwsBundle {
     public final int uniqueLocalFilePath = 1;
     public final int outputFilepath = 2;
     public final int workersRatio = 3;
-    static final String Delimiter = "_";
+    static final String Delimiter = "__";
 
     //message from worker
     public final int urlIndex = 0;
@@ -160,7 +160,6 @@ public class AwsBundle {
     public void sendMessage(String queueUrl, String msg) {
         SendMessageRequest send_msg_request = new SendMessageRequest()
                 .withQueueUrl(queueUrl)
-                .withDelaySeconds(10)
                 .withMessageBody(msg);
         this.sqs.sendMessage(send_msg_request);
     }
@@ -203,8 +202,7 @@ public class AwsBundle {
 
     public List<Message> fetchNewMessages(String queueUrl) {
         ReceiveMessageRequest receiveRequest = new ReceiveMessageRequest()
-                .withQueueUrl(queueUrl)
-                .withWaitTimeSeconds(20);
+                .withQueueUrl(queueUrl);
 
         return this.sqs.receiveMessage(receiveRequest).getMessages();
     }

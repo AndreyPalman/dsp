@@ -6,7 +6,9 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
-        <module name="dsp-ass1" />
+        <module name="Manager" />
+        <module name="Worker" />
+        <module name="LocalApp" />
       </profile>
     </annotationProcessing>
   </component>
