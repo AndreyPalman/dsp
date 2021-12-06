@@ -26,7 +26,7 @@ public class AwsBundle {
     private final AmazonSQS sqs;
 
 
-    public final String localAndManagerQueueName = "localToManagerQueueName";
+    public static String localAndManagerQueueName = "localToManagerQueueName";
 
     public static final String bucketName = "dspassignment1andreypalmans3bucket";
 
@@ -183,7 +183,8 @@ public class AwsBundle {
 
     public List<Message> fetchNewMessages(String queueUrl) {
         ReceiveMessageRequest receiveRequest = new ReceiveMessageRequest()
-                .withQueueUrl(queueUrl);
+                .withQueueUrl(queueUrl)
+                .withVisibilityTimeout(0);
 
         return this.sqs.receiveMessage(receiveRequest).getMessages();
     }

@@ -202,7 +202,8 @@ public class AwsBundle {
 
     public List<Message> fetchNewMessages(String queueUrl) {
         ReceiveMessageRequest receiveRequest = new ReceiveMessageRequest()
-                .withQueueUrl(queueUrl);
+                .withQueueUrl(queueUrl)
+                .withVisibilityTimeout(0);
 
         return this.sqs.receiveMessage(receiveRequest).getMessages();
     }

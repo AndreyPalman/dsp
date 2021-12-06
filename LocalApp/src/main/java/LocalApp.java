@@ -23,37 +23,36 @@ public class LocalApp {
     public static String filePathInS3 = "";
 
     public static String bucketName = "";
-    public static final String INPUT_DIR_PATH = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\src\\Input\\";
-    public static final String OUTPUT_DIR_PATH = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\src\\Output\\";
+    public static final String INPUT_DIR_PATH = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\LocalApp\\src\\Input\\";
+    public static final String OUTPUT_DIR_PATH = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\LocalApp\\src\\Output\\";
 
     public static boolean ProcessDoneMessageArrive = false;
 
-    public static void main(String[] args){
-
+    public static void main(String[] args) throws InterruptedException {
+        UUID localAppUuid = UUID.randomUUID();
         bucketName = AwsBundle.bucketName;
+//        AwsBundle.localAndManagerQueueName = "LocalAppQueue" + localAppUuid.toString().toLowerCase();
         parseArguments(args);
 
-        // Check if Manager node is active
-        // If not, create Manager node
-        if(!awsBundle.checkIfInstanceExist("Manager"))
-        {
-                createManager();
-        }
-        UUID localAppUuid = UUID.randomUUID();
-        bucketName = (AwsBundle.bucketName + localAppUuid.toString().toLowerCase()).toLowerCase();
-
+//        // Check if Manager node is active
+//        // If not, create Manager node
+//        if(!awsBundle.checkIfInstanceExist("Manager"))
+//        {
+//            createManager();
+//        }
 
         // Upload input file to S3
         awsBundle.createBucketIfNotExists(bucketName);
         awsBundle.uploadFileToS3(bucketName,inputFileName,inputFile);
 
         // Send message to an SQS queue, with the location of the file on S3
-        String queueUrl = awsBundle.createMsgQueue(awsBundle.localAndManagerQueueName);
+        String queueUrl = awsBundle.createMsgQueue(AwsBundle.localAndManagerQueueName);
+        String localandmanagerqueueUrl = awsBundle.createMsgQueue(AwsBundle.localAndManagerQueueName + localAppUuid.toString().toLowerCase());
         awsBundle.sendMessage(queueUrl,awsBundle.createMessage("NewTask",localAppUuid + AwsBundle.Delimiter +filePathInS3));
 
         // Checks an SQS queue for messages indicating the process is done and response ( summery file ) is available on S3
         while (!ProcessDoneMessageArrive) {
-            List<Message> messages = awsBundle.fetchNewMessages(queueUrl);
+            List<Message> messages = awsBundle.fetchNewMessages(localandmanagerqueueUrl);
             for (Message message : messages) {
                 if (message.getBody().split(AwsBundle.Delimiter)[0].equals("DoneTask")) {
                     ProcessDoneMessageArrive = true;
@@ -68,9 +67,15 @@ public class LocalApp {
 
                     createOutputFile(fullPathToOutputFile);
 
-                    awsBundle.deleteMessageFromQueue(queueUrl, message);
-                    awsBundle.deleteQueue(queueUrl);
+                    awsBundle.deleteMessageFromQueue(localandmanagerqueueUrl, message);
+                    awsBundle.deleteQueue(localandmanagerqueueUrl);
                 }
+            }
+            // sleep for 20 seconds
+            try {
+                Thread.sleep(20000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
             }
         }
 
@@ -79,7 +84,7 @@ public class LocalApp {
 
         // In case of terminate mode, sends a termination message to Manager
         if(shouldTerminate) {
-            awsBundle.sendMessage(queueUrl,awsBundle.createMessage("Terminate",""));
+            awsBundle.sendMessage(localandmanagerqueueUrl,awsBundle.createMessage("Terminate",""));
         }
     }
 
@@ -125,11 +130,11 @@ public class LocalApp {
     }
 
     private static void createManager(){
-        String managerScript = "#! /bin/bash\n" +
+        String managerScript = String.format("#! /bin/bash\n" +
                 "sudo yum update -y\n" +
                 "mkdir ManagerFiles\n" +
-                "aws s3 cp s3://ocr-assignment1/JarFiles/Manager.jar ./ManagerFiles\n" +
-                "java -jar /ManagerFiles/Manager.jar\n";
+                "aws s3 cp s3://%s/Manager.jar ./ManagerFiles\n" +
+                "java -jar /ManagerFiles/Manager.jar %d\n",AwsBundle.bucketName, numberOfMessagesPerWorker);
 
         awsBundle.createInstance("Manager",AwsBundle.ami,managerScript);
     }

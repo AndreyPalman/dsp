@@ -15,14 +15,22 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class Worker {
     final static AwsBundle awsBundle = AwsBundle.getInstance();
-    private static final String INPUT_DIR_PATH = "";
     public static boolean shouldTerminate = false;
+    static int MAX_T;
+
 
     public static void main(String[] args){
-
+        try {
+            MAX_T = Integer.parseInt(args[0]);
+        } catch (Exception e) {
+            MAX_T = 10;
+        }
+        ExecutorService threadPool = Executors.newFixedThreadPool(MAX_T);
         String queueUrl = awsBundle.createMsgQueue(awsBundle.managerAndWorkerQueueName);
 
         // Get a message from an SQS queue.
@@ -34,13 +42,15 @@ public class Worker {
                 String messageType = messageParts[0];
                 String operation = messageParts[1];
                 String fileName = messageParts[2];
+                String localAppName = messageParts[3];
 
                 if (messageType.equals("terminate")) {
                     shouldTerminate = true;
                 }else if (messageType.equals("PdfTask")) {
                     // Download the PDF file indicated in the message.
                     // Perform the operation requested on the file.
-                    ConvertFirstPage(fileName,operation);
+                    Task t = new Task(fileName,operation,localAppName);
+                    threadPool.execute(t);
                     // Upload the resulting output file to S3.
                     // Put a message in an SQS queue indicating the original URL of the PDF, the S3 url of the new
                     // image file, and the operation that was performed.
@@ -53,9 +63,23 @@ public class Worker {
         }
 
     }
+}
 
-    public static void ConvertFirstPage(String fileName,String ConvertMethod){
-        String fileNameTrimmed = fileName.substring(fileName.lastIndexOf("/") + 1,fileName.lastIndexOf(".pdf"));
+class Task implements Runnable {
+    final static AwsBundle awsBundle = AwsBundle.getInstance();
+    public String fileName;
+    public String ConvertMethod;
+    public String localAppName;
+
+    public Task(String fileName, String ConvertMethod, String localAppName) {
+        this.fileName = fileName;
+        this.ConvertMethod = ConvertMethod;
+        this.localAppName = localAppName;
+    }
+
+    @Override
+    public void run() {
+        String fileNameTrimmed = fileName.substring(fileName.lastIndexOf("/") + 1, fileName.lastIndexOf(".pdf"));
         String saveLocation = "./" + fileNameTrimmed + ".pdf";
         String fileToDeletePath = "";
         IOException exception = new IOException("Exception in preforming operation");
@@ -101,7 +125,7 @@ public class Worker {
                         BufferedImage image = renderer.renderImage(0);
                         //Writing the image to a file
                         fileToDeletePath = "./" + fileNameTrimmed + ".png";
-                        ImageIO.write(image, "PNG", new File("./" +fileNameTrimmed + ".png"));
+                        ImageIO.write(image, "PNG", new File("./" + fileNameTrimmed + ".png"));
                         taskCompleted = true;
                         break;
                     case "ToText": {
@@ -110,7 +134,7 @@ public class Worker {
 
                         try {
                             fileToDeletePath = "./" + fileNameTrimmed + ".txt";
-                            FileWriter myWriter = new FileWriter("./" +fileNameTrimmed + ".txt");
+                            FileWriter myWriter = new FileWriter("./" + fileNameTrimmed + ".txt");
                             myWriter.write(text);
                             myWriter.close();
                         } catch (IOException e) {
@@ -158,16 +182,16 @@ public class Worker {
             exception = e;
         }
 
-        if(taskCompleted) {
+        if (taskCompleted) {
             awsBundle.uploadFileToS3(AwsBundle.bucketName, fileNameTrimmed, file);
 
             awsBundle.sendMessage(
                     awsBundle.managerAndWorkerQueueName,
-                    awsBundle.createMessage("DonePdfTask",fileNameTrimmed + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
+                    awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter + fileNameTrimmed + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
         } else {
             awsBundle.sendMessage(
                     awsBundle.managerAndWorkerQueueName,
-                    awsBundle.createMessage("DonePdfTask",
+                    awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter +
                             exception.getMessage() + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
         }
 
@@ -176,10 +200,9 @@ public class Worker {
             boolean res = file.delete();
             File f = new File(fileToDeletePath);
             boolean originalRes = f.delete();
-        }    catch (Exception e) {
+        } catch (Exception e) {
             e.printStackTrace();
         }
-
-
     }
 }
+
