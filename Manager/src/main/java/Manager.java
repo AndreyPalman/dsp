@@ -14,6 +14,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class Manager {
 
+    public static String region = "";
+    public static String aws_access_key_id = "";
+    public static String aws_secret_access_key = "";
+    public static String aws_session_token = "";
+
     final static AwsBundle awsBundle = AwsBundle.getInstance();
 
     public static ConcurrentHashMap<String, Integer> LocalRequests = new ConcurrentHashMap<>();
@@ -21,10 +26,21 @@ public class Manager {
 
 
     public static AtomicBoolean shouldTerminate = new AtomicBoolean(false);
+    public static AtomicBoolean shouldNotTakeNewTasks = new AtomicBoolean(false);
     public static int numberOfMessagesPerWorker = 10;
     public static AtomicInteger activeWorkers = new AtomicInteger(1);
 
     public static void main(String[] args){
+
+        try {
+            region = System.getenv("aws_region");
+            aws_access_key_id = System.getenv("aws_access_key_id");
+            aws_secret_access_key = System.getenv("aws_secret_access_key");
+            aws_session_token = System.getenv("aws_session_token");
+        }catch (Exception e){
+            System.out.println("Error reading environment variables");
+        }
+
         try {
             numberOfMessagesPerWorker = Integer.parseInt(args[0]);
         }catch (Exception e){
@@ -38,13 +54,12 @@ public class Manager {
                 List<Message> messages = awsBundle.fetchNewMessages(ManagerAndWorkerQueueUrl);
                 try {
                     messages.addAll(awsBundle.fetchNewMessages(LocalAndManagerQueueUrl));
-
-                    for (Message message : messages) {
+                    for(Message message : messages) {
                         // If the message is that of a new task it
                         String messageType = message.getBody().split(AwsBundle.Delimiter)[0];
                         switch (messageType) {
                             case "NewTask":
-                                if (!shouldTerminate.get()) {
+                                if (!shouldNotTakeNewTasks.get()) {
                                     new Thread(new Runnable() {
                                         @Override
                                         public void run() {
@@ -79,27 +94,29 @@ public class Manager {
                             case "Terminate":
                                 // If the message is a termination message, then the manager:
                                 // Does not accept any more input files from local applications.
-                                shouldTerminate.set(true);
+                                shouldNotTakeNewTasks.set(true);
                                 System.out.println("Terminate Manager");
                                 // Waits for all the workers to finish their job, and then terminates them.
                                 // Creates response messages for the jobs, if needed.
                                 // Terminates
                                 System.out.println("Waiting for all workers to finish their job");
-                                while(!LocalRequests.isEmpty()){
+                                while (!LocalRequests.isEmpty()) {
                                     Thread.sleep(20000);
                                 }
                                 System.out.println("All workers finished their job");
                                 System.out.println("Sending Terminate messages to workers");
                                 // send to workers queue terminate message
-                                for (int i = 0 ; i < activeWorkers.get() ; i++){
+                                for (int i = 0; i < activeWorkers.get(); i++) {
                                     awsBundle.sendMessage(awsBundle.managerAndWorkerQueueName, "Terminate" + AwsBundle.Delimiter + "Terminate" + AwsBundle.Delimiter + "Terminate" + AwsBundle.Delimiter + "Terminate");
                                 }
                                 // Sleep for 1 minute
                                 Thread.sleep(60000);
-                                try{
+                                try {
                                     awsBundle.deleteQueue(LocalAndManagerQueueUrl);
                                     awsBundle.deleteQueue(awsBundle.managerAndWorkerQueueName);
-                                }catch (Exception ignored){}
+                                } catch (Exception ignored) {
+                                }
+                                shouldTerminate.set(true);
                                 break;
                             case "DonePdfTask":
                                 new Thread(new Runnable() {
@@ -144,7 +161,7 @@ public class Manager {
         List<Triplet<String,String,String>> doneTasks = LocalDoneTasks.get(localAppName);
         PrintWriter writer = null;
         try {
-            writer = new PrintWriter("./" +"summery" + ".txt", "UTF-8");
+            writer = new PrintWriter("./" +"summery" + localAppName + ".txt", "UTF-8");
             for (Triplet<String,String,String> task : doneTasks) {
                 String s3FileUrl = task.getValue0();
                 String operation = task.getValue1();
@@ -159,8 +176,8 @@ public class Manager {
 
         try {
 
-            File f = new File("./" +"summery" + ".txt");
-            awsBundle.uploadFileToS3(AwsBundle.bucketName,"summery.txt",f);
+            File f = new File("./" +"summery" + localAppName + ".txt");
+            awsBundle.uploadFileToS3(AwsBundle.bucketName, String.format("summery%s.txt", localAppName),f);
             try {
                 boolean res = f.delete();
             } catch (Exception e) {
@@ -172,7 +189,7 @@ public class Manager {
 
         awsBundle.sendMessage(
                 awsBundle.localAndManagerQueueName + localAppName,
-                awsBundle.createMessage("DoneTask","summery.txt"));
+                awsBundle.createMessage("DoneTask", String.format("summery%s.txt", localAppName)));
     }
 
 
@@ -191,11 +208,16 @@ public class Manager {
     }
 
     private static void createWorker(int activeWorkers){
+
+        String credentials = "[default]\n" + "region=" +region + "\n" + "aws_access_key_id=" + aws_access_key_id + "\n" + "aws_secret_access_key=" +aws_secret_access_key + "\n" + "aws_session_token=" + aws_session_token;
         String managerScript = String.format("#! /bin/bash\n" +
                 "sudo yum update -y\n" +
-                "mkdir WorkerFile\n" +
-                "aws s3 cp s3://%s/Worker.jar ./WorkerFile\n" +
-                "java -jar /WorkerFile/Worker.jar\n", AwsBundle.bucketName);
+                "aws s3 cp s3://%s/Worker.jar Worker.jar\n" +
+                "mkdir .aws\n" +
+                "cd .aws\n" +
+                "echo $'" + credentials +  "' > credentials\n" +
+                "cd ..\n" +
+                "java -jar Worker.jar %d\n",AwsBundle.bucketName, numberOfMessagesPerWorker);
 
         awsBundle.createInstance(String.format("Worker%d", activeWorkers),AwsBundle.ami,managerScript);
     }

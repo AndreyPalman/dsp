@@ -32,19 +32,23 @@ public class LocalApp {
     public static LocalDateTime startTime;
     public static LocalDateTime endTime;
 
-    public static void main(String[] args) throws InterruptedException {
+    public static String region = "";
+    public static String aws_access_key_id = "";
+    public static String aws_secret_access_key = "";
+    public static String aws_session_token = "";
 
+    public static void main(String[] args) {
+        parseAwsCredentials();
         UUID localAppUuid = UUID.randomUUID();
         bucketName = AwsBundle.bucketName;
-//        AwsBundle.localAndManagerQueueName = "LocalAppQueue" + localAppUuid.toString().toLowerCase();
         parseArguments(args);
 
-//        // Check if Manager node is active
-//        // If not, create Manager node
-//        if(!awsBundle.checkIfInstanceExist("Manager"))
-//        {
-//            createManager();
-//        }
+        // Check if Manager node is active
+        // If not, create Manager node
+        if(!awsBundle.checkIfInstanceExist("Manager"))
+        {
+            createManager();
+        }
 
         // Upload input file to S3
         awsBundle.createBucketIfNotExists(bucketName);
@@ -74,7 +78,7 @@ public class LocalApp {
                         //e.printStackTrace();
                     }
 
-                    createOutputFile(fullPathToOutputFile);
+                    createOutputFile(fullPathToOutputFile,localAppUuid);
                     if(shouldTerminate) {
                         awsBundle.sendMessage(queueUrl, awsBundle.createMessage("Terminate", "Terminate" + AwsBundle.Delimiter + "Terminate"));
                     }
@@ -129,22 +133,56 @@ public class LocalApp {
         }
     }
 
+    private static void parseAwsCredentials() {
+        try {
+            File f = new File("C:\\Users\\Andrey\\.aws\\config");
+            // iterate over the lines in the file
+            Scanner scanner = new Scanner(f);
+            while (scanner.hasNextLine()) {
+                String line = scanner.nextLine();
+                if (line.contains("region")) {
+                    region = line.split("=",2)[1];
+                }
+                if (line.contains("aws_access_key_id")) {
+                    aws_access_key_id = line.split("=",2)[1];
+                }
+                if (line.contains("aws_secret_access_key")) {
+                    aws_secret_access_key = line.split("=",2)[1];
+                }
+                if (line.contains("aws_session_token")) {
+                    aws_session_token = line.split("=",2)[1];
+                }
+            }
+        }catch (Exception e) {
+            System.out.println("Error while parsing AWS credentials");
+        }
+    }
+
     public static boolean isLegalFileSize(File file) {
         // check if file size is greater than 10 MB return false else true
         return file.length() < AwsBundle.maxFileSize;
     }
 
     private static void createManager(){
+
+        String credentials = "[default]\n" + "region=" +region + "\n" + "aws_access_key_id=" + aws_access_key_id + "\n" + "aws_secret_access_key=" +aws_secret_access_key + "\n" + "aws_session_token=" + aws_session_token;
         String managerScript = String.format("#! /bin/bash\n" +
                 "sudo yum update -y\n" +
-                "mkdir ManagerFiles\n" +
-                "aws s3 cp s3://%s/Manager.jar ./ManagerFiles\n" +
-                "java -jar /ManagerFiles/Manager.jar %d\n",AwsBundle.bucketName, numberOfMessagesPerWorker);
+                "aws s3 cp s3://%s/Manager.jar Manager.jar\n" +
+                String.format("export aws_region=%s\n", region ) +
+                String.format("export aws_access_key_id=%s\n", aws_access_key_id ) +
+                String.format("export aws_secret_access_key=%s\n", aws_secret_access_key ) +
+                String.format("export aws_session_token=%s\n", aws_session_token ) +
+                "mkdir .aws\n" +
+                "cd .aws\n" +
+                "echo $'" + credentials +  "' > credentials\n" +
+                "cd ..\n" +
+                "java -jar Manager.jar %d\n",AwsBundle.bucketName, numberOfMessagesPerWorker);
 
         awsBundle.createInstance("Manager",AwsBundle.ami,managerScript);
     }
 
-    public static void createOutputFile(String filePath){
+    public static void createOutputFile(String filePath, UUID localAppUuid){
         File file = new File(filePath);
         String htmlPageOpening = "<!DOCTYPE html><html><body><h1>Assignment 1</h1><p><table><tr><th>Operation</th><th>Input file</th><th>Output file</th></tr>";
         String htmlPageEnding = "</table></p></body></html>";
@@ -168,7 +206,7 @@ public class LocalApp {
 
         FileWriter myWriter = null;
         try {
-            myWriter = new FileWriter("./output.html");
+            myWriter = new FileWriter(String.format("./output%s.html", localAppUuid));
             try {
                 myWriter.write(htmlPageOpening + htmlBody + htmlPageEnding);
             } catch (IOException e) {

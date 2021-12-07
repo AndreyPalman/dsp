@@ -201,12 +201,12 @@ class Task implements Runnable {
         }
 
         if (taskCompleted) {
-            awsBundle.uploadFileToS3(AwsBundle.bucketName, fileNameTrimmed, file);
+            awsBundle.uploadFileToS3(AwsBundle.bucketName, fileNameTrimmed + localAppName, file);
             System.out.println("Task completed for: " + fileName +" uploaded to S3 and sending message to manager");
 
             awsBundle.sendMessage(
                     awsBundle.managerAndWorkerQueueName,
-                    awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter + fileNameTrimmed + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
+                    awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter + fileNameTrimmed+localAppName + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
         } else {
             System.out.println("Task failed for: " + fileName + "Sending message to manager");
             awsBundle.sendMessage(
