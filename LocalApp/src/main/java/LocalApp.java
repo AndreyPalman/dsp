@@ -4,6 +4,8 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Scanner;
 import java.util.UUID;
@@ -27,8 +29,11 @@ public class LocalApp {
     public static final String OUTPUT_DIR_PATH = "C:\\Users\\Andrey\\Desktop\\dsp-ass1\\LocalApp\\src\\Output\\";
 
     public static boolean ProcessDoneMessageArrive = false;
+    public static LocalDateTime startTime;
+    public static LocalDateTime endTime;
 
     public static void main(String[] args) throws InterruptedException {
+
         UUID localAppUuid = UUID.randomUUID();
         bucketName = AwsBundle.bucketName;
 //        AwsBundle.localAndManagerQueueName = "LocalAppQueue" + localAppUuid.toString().toLowerCase();
@@ -49,42 +54,42 @@ public class LocalApp {
         String queueUrl = awsBundle.createMsgQueue(AwsBundle.localAndManagerQueueName);
         String localandmanagerqueueUrl = awsBundle.createMsgQueue(AwsBundle.localAndManagerQueueName + localAppUuid.toString().toLowerCase());
         awsBundle.sendMessage(queueUrl,awsBundle.createMessage("NewTask",localAppUuid + AwsBundle.Delimiter +filePathInS3));
+        startTime = LocalDateTime.now();
 
         // Checks an SQS queue for messages indicating the process is done and response ( summery file ) is available on S3
         while (!ProcessDoneMessageArrive) {
             List<Message> messages = awsBundle.fetchNewMessages(localandmanagerqueueUrl);
             for (Message message : messages) {
                 if (message.getBody().split(AwsBundle.Delimiter)[0].equals("DoneTask")) {
+                    endTime = LocalDateTime.now();
+                    System.out.println("Processing time: " + Math.abs(endTime.getHour() - startTime.getHour()) + ":" + Math.abs(endTime.getMinute() - startTime.getMinute()) + ":" + Math.abs(endTime.getSecond() - startTime.getSecond()));
                     ProcessDoneMessageArrive = true;
                     String fileUrlInS3 = message.getBody().split(AwsBundle.Delimiter)[1];
 
                     InputStream downloadedFileStream = awsBundle.downloadFileFromS3(bucketName, fileUrlInS3);
+                    System.out.printf("Downloading summary file: %s from S3\n",  fileUrlInS3);
                     try {
                         Files.copy(downloadedFileStream, Paths.get(fullPathToOutputFile), StandardCopyOption.REPLACE_EXISTING);
                     } catch (IOException e) {
-                        e.printStackTrace();
+                        //e.printStackTrace();
                     }
 
                     createOutputFile(fullPathToOutputFile);
-
-                    awsBundle.deleteMessageFromQueue(localandmanagerqueueUrl, message);
-                    awsBundle.deleteQueue(localandmanagerqueueUrl);
+                    if(shouldTerminate) {
+                        awsBundle.sendMessage(queueUrl, awsBundle.createMessage("Terminate", "Terminate" + AwsBundle.Delimiter + "Terminate"));
+                    }
+                    try {
+                        awsBundle.deleteMessageFromQueue(localandmanagerqueueUrl, message);
+                        awsBundle.deleteQueue(localandmanagerqueueUrl);
+                    } catch (Exception ignored) {}
                 }
             }
             // sleep for 20 seconds
             try {
                 Thread.sleep(20000);
             } catch (InterruptedException e) {
-                e.printStackTrace();
+                //e.printStackTrace();
             }
-        }
-
-        // Creates a html file representing the summery results
-
-
-        // In case of terminate mode, sends a termination message to Manager
-        if(shouldTerminate) {
-            awsBundle.sendMessage(localandmanagerqueueUrl,awsBundle.createMessage("Terminate",""));
         }
     }
 
@@ -111,7 +116,7 @@ public class LocalApp {
             }
 
             if (args.length == 4) {
-                if (args[3].equals("terminate"))
+                if (args[3].equals("true"))
                     shouldTerminate = true;
                 else {
                     System.err.println("Invalid command line argument: " + args[3]);
@@ -177,6 +182,6 @@ public class LocalApp {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
+        System.out.println("Successfully created output file");
     }
 }

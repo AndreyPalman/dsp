@@ -143,7 +143,7 @@ public class AwsBundle {
         try {
             return this.s3.getObject(new GetObjectRequest(bucketName, keyName)).getObjectContent();
         } catch (AmazonS3Exception e) {
-            e.printStackTrace();
+            //e.printStackTrace();
             System.exit(1);
         }
         return null;
@@ -203,7 +203,7 @@ public class AwsBundle {
     public List<Message> fetchNewMessages(String queueUrl) {
         ReceiveMessageRequest receiveRequest = new ReceiveMessageRequest()
                 .withQueueUrl(queueUrl)
-                .withVisibilityTimeout(0);;
+                .withVisibilityTimeout(20);
 
         return this.sqs.receiveMessage(receiveRequest).getMessages();
     }

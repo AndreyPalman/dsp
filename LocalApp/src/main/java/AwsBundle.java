@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedList;
 import java.util.List;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -164,6 +165,11 @@ public class AwsBundle {
             e.printStackTrace();
             throw e;
         }
+    }
+
+    // get all sqs from the account
+    public List<String> getAllSQS() {
+        return new LinkedList<>(sqs.listQueues().getQueueUrls());
     }
 
     public String getQueueUrl(String queueUrl) {
