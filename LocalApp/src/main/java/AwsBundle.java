@@ -255,4 +255,11 @@ public class AwsBundle {
     public final AmazonEC2 getEc2() {
         return this.ec2;
     }
+
+    public void deleteAllQueues() {
+        List<String> queueNames = getAllSQS();
+        for ( String queueName : queueNames) {
+            deleteQueue(queueName);
+        }
+    }
 }

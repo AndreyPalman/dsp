@@ -4,7 +4,6 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedList;
 import java.util.List;
@@ -40,7 +39,7 @@ public class LocalApp {
 
     public static void main(String[] args) {
 
-        boolean ans = awsBundle.checkIfInstanceExist("Worker1");
+
 
         parseAwsCredentials();
         UUID localAppUuid = UUID.randomUUID();
@@ -54,6 +53,8 @@ public class LocalApp {
             // Create Manager node
             System.out.println("Creating Manager");
             createManager();
+            // delete all active queues in SQS
+            awsBundle.deleteAllQueues();
         }
 
         // Upload input file to S3
@@ -216,7 +217,7 @@ public class LocalApp {
 
         FileWriter myWriter = null;
         try {
-            myWriter = new FileWriter(String.format("./output%s.html", localAppUuid));
+            myWriter = new FileWriter("./output.html");
             try {
                 myWriter.write(htmlPageOpening + htmlBody + htmlPageEnding);
             } catch (IOException e) {
