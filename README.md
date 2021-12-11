@@ -3,6 +3,12 @@ Assignment 1: PDF Document Conversion in the Cloud
 Name: Andrey Palman
 Id's: 320686736
 
+How to run the sytem
+cd <path>\dsp-ass1\
+put your input file <path>\dsp-ass1\LocalApp\src\Input\
+java -jar LocalApp <arg1> <arg2> <arg3> [<arg4> optional]
+the output file will be in <path>\dsp-ass1\
+
 Q: Did you think about scalability?
 A: Yes, every Worker that the Manager "creates" is using a thread pool with a limit of the argument that the manager passes to him. so for 1b clients, the response time might be extensive, but in the end, the client will receive his output file.
 
