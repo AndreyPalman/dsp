@@ -1,8 +1,11 @@
 <component name="ArtifactManager">
-  <artifact type="jar" name="Test:jar">
-    <output-path>$PROJECT_DIR$/out/artifacts/Test_jar</output-path>
-    <root id="archive" name="Test.jar">
-      <element id="module-output" name="Test" />
+  <artifact type="jar" name="LocalApp:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/LocalApp_jar</output-path>
+    <root id="archive" name="LocalApp.jar">
+      <element id="directory" name="META-INF">
+        <element id="file-copy" path="$PROJECT_DIR$/LocalApp/src/main/java/META-INF/MANIFEST.MF" />
+      </element>
+      <element id="module-output" name="LocalApp" />
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/com/amazonaws/aws-java-sdk-kinesisvideosignalingchannels/1.12.111/aws-java-sdk-kinesisvideosignalingchannels-1.12.111.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/com/amazonaws/aws-java-sdk-nimblestudio/1.12.111/aws-java-sdk-nimblestudio-1.12.111.jar" path-in-jar="/" />
       <element id="extracted-dir" path="$MAVEN_REPOSITORY$/com/amazonaws/aws-java-sdk-kinesisanalyticsv2/1.12.111/aws-java-sdk-kinesisanalyticsv2-1.12.111.jar" path-in-jar="/" />
