@@ -28,5 +28,4 @@ Q:  Did you manage the termination process? Be sure all is closed once requested
 A: Yes, All the tasks finished before the manager terminates all the workers.
 
 System overview
-
-![](system.png)
+system.png in the main folder.
