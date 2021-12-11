@@ -21,40 +21,94 @@ public class Manager {
 
     final static AwsBundle awsBundle = AwsBundle.getInstance();
 
-    public static ConcurrentHashMap<String, Integer> LocalRequests = new ConcurrentHashMap<>();
+    public static ConcurrentHashMap<String, AtomicInteger> LocalRequests = new ConcurrentHashMap<>();
     public static ConcurrentHashMap<String, List<Triplet<String, String, String>>> LocalDoneTasks = new ConcurrentHashMap<>();
 
 
     public static AtomicBoolean shouldTerminate = new AtomicBoolean(false);
     public static AtomicBoolean shouldNotTakeNewTasks = new AtomicBoolean(false);
-    public static int numberOfMessagesPerWorker = 10;
+    public static int numberOfMessagesPerWorker = 100;
     public static AtomicInteger activeWorkers = new AtomicInteger(1);
 
-    public static void main(String[] args){
+    public static void main(String[] args) {
+
+        // terminate all workers the somehow are still running
+        awsBundle.terminateRunningAllWorkers();
 
         try {
             region = System.getenv("aws_region");
             aws_access_key_id = System.getenv("aws_access_key_id");
             aws_secret_access_key = System.getenv("aws_secret_access_key");
             aws_session_token = System.getenv("aws_session_token");
-        }catch (Exception e){
+        } catch (Exception e) {
             System.out.println("Error reading environment variables");
         }
 
         try {
             numberOfMessagesPerWorker = Integer.parseInt(args[0]);
-        }catch (Exception e){
-            numberOfMessagesPerWorker = 30;
+        } catch (Exception e) {
+            numberOfMessagesPerWorker = 100;
         }
 
+        System.out.println("Number of messages per worker: " + numberOfMessagesPerWorker);
+
         String ManagerAndWorkerQueueUrl = awsBundle.createMsgQueue(awsBundle.managerAndWorkerQueueName);
+        String ManagerAndWorkerDoneQueueUrl = awsBundle.createMsgQueue(awsBundle.managerAndWorkerDoneQueueName);
         String LocalAndManagerQueueUrl = awsBundle.getQueueUrl(awsBundle.localAndManagerQueueName);
-        while(!shouldTerminate.get()) {
+
+
+        // Listen to done tasks
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+
+                while (!shouldTerminate.get()) {
+                    List<Message> messages = null;
+                    try {
+                        messages = awsBundle.fetchNewMessages(ManagerAndWorkerDoneQueueUrl);
+                    }
+                    catch (Exception e) {
+                        //System.out.println("Error fetching messages from ManagerAndWorkerDoneQueueUrl");
+                        messages = new LinkedList<>();
+                    }
+                    for (Message message : messages) {
+                        new Thread(() -> {
+                            String localAppNameToSendDone = message.getBody().split(AwsBundle.Delimiter)[1];
+                            String s3FileUrl = message.getBody().split(AwsBundle.Delimiter)[2];
+                            String operation = message.getBody().split(AwsBundle.Delimiter)[3];
+                            String OriginalFileName = message.getBody().split(AwsBundle.Delimiter)[4];
+
+                            System.out.println("Done task received: " + localAppNameToSendDone + "  " + s3FileUrl + " " + operation + " Tasks left for local : " + LocalRequests.get(localAppNameToSendDone));
+                            LocalDoneTasks.computeIfAbsent(localAppNameToSendDone, k -> new LinkedList<>());
+                            List<Triplet<String, String, String>> allTasks = LocalDoneTasks.get(localAppNameToSendDone);
+                            allTasks.add(new Triplet<>(s3FileUrl, operation, OriginalFileName));
+
+                            awsBundle.deleteMessageFromQueue(ManagerAndWorkerDoneQueueUrl, message);
+
+                            try {
+                                LocalRequests.get(localAppNameToSendDone).decrementAndGet();
+                            }catch (Exception ignored){}
+
+                            try {
+                                if (LocalRequests.get(localAppNameToSendDone).get() <= 0) {
+                                    LocalRequests.remove(localAppNameToSendDone);
+                                    createSummaryReport(localAppNameToSendDone);
+                                }
+                            }catch (Exception e){
+                                // ignore
+                            }
+
+
+                        }).start();
+                    }
+                }
+            }
+        }).start();
+        while (!shouldTerminate.get()) {
             try {
-                List<Message> messages = awsBundle.fetchNewMessages(ManagerAndWorkerQueueUrl);
                 try {
-                    messages.addAll(awsBundle.fetchNewMessages(LocalAndManagerQueueUrl));
-                    for(Message message : messages) {
+                    List<Message> messages = new LinkedList<>(awsBundle.fetchNewMessages(LocalAndManagerQueueUrl));
+                    for (Message message : messages) {
                         // If the message is that of a new task it
                         String messageType = message.getBody().split(AwsBundle.Delimiter)[0];
                         switch (messageType) {
@@ -68,7 +122,7 @@ public class Manager {
                                             System.out.println("New task received: " + localAppName);
                                             // check if the localAppName is already in the map
                                             LocalDoneTasks.computeIfAbsent(localAppName, k -> new LinkedList<>());
-                                            LocalRequests.computeIfAbsent(localAppName, k -> 0);
+                                            LocalRequests.computeIfAbsent(localAppName, k -> new AtomicInteger(0));
                                             String fileUrlInS3 = message.getBody().split(AwsBundle.Delimiter)[2].split("//")[1];
                                             String bucketName = fileUrlInS3.split("/")[0];
                                             String fileName = fileUrlInS3.split("/")[1];
@@ -105,64 +159,46 @@ public class Manager {
                                 }
                                 System.out.println("All workers finished their job");
                                 System.out.println("Sending Terminate messages to workers");
-                                // send to workers queue terminate message
-                                for (int i = 0; i < activeWorkers.get(); i++) {
-                                    awsBundle.sendMessage(awsBundle.managerAndWorkerQueueName, "Terminate" + AwsBundle.Delimiter + "Terminate" + AwsBundle.Delimiter + "Terminate" + AwsBundle.Delimiter + "Terminate");
-                                }
+                                // Terminate all workers
+                                awsBundle.terminateRunningAllWorkers();
                                 // Sleep for 1 minute
                                 Thread.sleep(60000);
                                 try {
                                     awsBundle.deleteQueue(LocalAndManagerQueueUrl);
-                                    awsBundle.deleteQueue(awsBundle.managerAndWorkerQueueName);
-                                } catch (Exception ignored) {
+                                }catch (Exception e){
+                                    e.printStackTrace();
                                 }
                                 shouldTerminate.set(true);
                                 break;
-                            case "DonePdfTask":
-                                new Thread(new Runnable() {
-                                    @Override
-                                    public void run() {
-                                        String localAppNameToSendDone = message.getBody().split(AwsBundle.Delimiter)[1];
-                                        String s3FileUrl = message.getBody().split(AwsBundle.Delimiter)[2];
-                                        String operation = message.getBody().split(AwsBundle.Delimiter)[3];
-                                        String OriginalFileName = message.getBody().split(AwsBundle.Delimiter)[4];
-
-                                        System.out.println("Done task received: " + localAppNameToSendDone + "  " + s3FileUrl + " " + operation);
-                                        LocalDoneTasks.computeIfAbsent(localAppNameToSendDone, k -> new LinkedList<>());
-                                        List<Triplet<String, String, String>> allTasks = LocalDoneTasks.get(localAppNameToSendDone);
-                                        allTasks.add(new Triplet<>(s3FileUrl, operation, OriginalFileName));
-
-                                        awsBundle.deleteMessageFromQueue(ManagerAndWorkerQueueUrl, message);
-
-                                        LocalRequests.replace(localAppNameToSendDone, LocalRequests.get(localAppNameToSendDone), LocalRequests.get(localAppNameToSendDone) - 1);
-                                        if (LocalRequests.get(localAppNameToSendDone) == 0) {
-                                            createSummaryReport(localAppNameToSendDone);
-                                            LocalRequests.remove(localAppNameToSendDone);
-                                        }
-                                    }
-                                }).start();
-                                break;
                         }
                     }
-                } catch (Exception ignored) {}
-            }catch (Exception e) {
+                } catch (Exception ignored) {
+                }
+            } catch (Exception e) {
                 // Sleep for 10 seconds, and then try again
                 try {
-                Thread.sleep(10000);
-                } catch (InterruptedException ignored) {}
+                    Thread.sleep(10000);
+                } catch (InterruptedException ignored) {
+                }
             }
 
         }
+        try {
+            awsBundle.terminateCurrentInstance();
+        }catch (Exception e){
+            //e.printStackTrace();
+        }
+
     }
 
-    public static void createSummaryReport(String localAppName){
+    public static void createSummaryReport(String localAppName) {
         System.out.println("Creating summary report for " + localAppName);
         String text = "";
-        List<Triplet<String,String,String>> doneTasks = LocalDoneTasks.get(localAppName);
+        List<Triplet<String, String, String>> doneTasks = LocalDoneTasks.get(localAppName);
         PrintWriter writer = null;
         try {
-            writer = new PrintWriter("./" +"summery" + localAppName + ".txt", "UTF-8");
-            for (Triplet<String,String,String> task : doneTasks) {
+            writer = new PrintWriter("./" + "summery" + localAppName + ".txt", "UTF-8");
+            for (Triplet<String, String, String> task : doneTasks) {
                 String s3FileUrl = task.getValue0();
                 String operation = task.getValue1();
                 String originalFileName = task.getValue2();
@@ -176,8 +212,8 @@ public class Manager {
 
         try {
 
-            File f = new File("./" +"summery" + localAppName + ".txt");
-            awsBundle.uploadFileToS3(AwsBundle.bucketName, String.format("summery%s.txt", localAppName),f);
+            File f = new File("./" + "summery" + localAppName + ".txt");
+            awsBundle.uploadFileToS3(AwsBundle.bucketName, String.format("summery%s.txt", localAppName), f);
             try {
                 boolean res = f.delete();
             } catch (Exception e) {
@@ -194,37 +230,36 @@ public class Manager {
 
 
     private static void startWorkersAccordinglyToSqsMessageCount(int numberOfNewTasks) {
+        System.out.println("Number of new tasks: " + numberOfNewTasks);
         int numberOfWorkersNeeded = Math.min(AwsBundle.MAX_INSTANCES, Math.max(1, numberOfNewTasks / numberOfMessagesPerWorker));
         System.out.println("Number of workers needed: " + numberOfWorkersNeeded);
-        if (numberOfWorkersNeeded > activeWorkers.get()) {
-            for (int i = 0; i < numberOfWorkersNeeded - activeWorkers.get(); i++) {
+        System.out.println("Number of workers currently active: " + (activeWorkers.get()-1));
+        if (numberOfWorkersNeeded > (activeWorkers.get()-1)) {
+            int numberOfWorkersToStart = numberOfWorkersNeeded - activeWorkers.get() + 1;
+            for (int i = 0; i < numberOfWorkersToStart; i++) {
                 // Start Worker
-                if(activeWorkers.get() < AwsBundle.MAX_INSTANCES - 1) {
-                    //createWorker(activeWorkers);
-                    activeWorkers.getAndIncrement();
+                if (activeWorkers.get() < AwsBundle.MAX_INSTANCES - 1) {
+                    System.out.println("active workers: " + activeWorkers.get());
+                    createWorker(activeWorkers.get());
+                    activeWorkers.incrementAndGet();
                 }
             }
         }
     }
 
-    private static void createWorker(int activeWorkers){
+    private static void createWorker(int activeWorkers) {
 
-        String credentials = "[default]\n" + "region=" +region + "\n" + "aws_access_key_id=" + aws_access_key_id + "\n" + "aws_secret_access_key=" +aws_secret_access_key + "\n" + "aws_session_token=" + aws_session_token;
+        String credentials = "[default]\n" + "region=" + region + "\n" + "aws_access_key_id=" + aws_access_key_id + "\n" + "aws_secret_access_key=" + aws_secret_access_key + "\n" + "aws_session_token=" + aws_session_token;
         String managerScript = String.format("#! /bin/bash\n" +
                 "sudo yum update -y\n" +
                 "aws s3 cp s3://%s/Worker.jar Worker.jar\n" +
-                "mkdir .aws\n" +
-                "cd .aws\n" +
-                "echo $'" + credentials +  "' > credentials\n" +
-                "cd ..\n" +
-                "java -jar Worker.jar %d\n",AwsBundle.bucketName, numberOfMessagesPerWorker);
+                "java -jar Worker.jar %d\n", AwsBundle.bucketName, numberOfMessagesPerWorker);
 
-        awsBundle.createInstance(String.format("Worker%d", activeWorkers),AwsBundle.ami,managerScript);
+        awsBundle.createInstance(String.format("Worker%d", activeWorkers), AwsBundle.ami, managerScript);
     }
 
-    public static int createSqsMessagesForEachUrl(String fileName, String localAppName){
+    public static int createSqsMessagesForEachUrl(String fileName, String localAppName) {
         File inputFile = new File(fileName);
-        int numberOfTasks = 0;
         try (BufferedReader br = new BufferedReader(new FileReader(inputFile))) {
             String line = "";
             while (true) {
@@ -239,11 +274,10 @@ public class Manager {
                 awsBundle.sendMessage(
                         awsBundle.managerAndWorkerQueueName,
                         awsBundle.createMessage("PdfTask", operation + AwsBundle.Delimiter + url + AwsBundle.Delimiter + localAppName));
-                System.out.println("Sending pdt task to worker " + url + " " + operation + " " + localAppName);
+                System.out.println("Sending pdf task to worker " + url + " " + operation + " " + localAppName);
 
-                numberOfTasks++;
-                LocalRequests.computeIfAbsent(localAppName, k -> 0);
-                LocalRequests.replace(localAppName,LocalRequests.get(localAppName),numberOfTasks);
+                LocalRequests.computeIfAbsent(localAppName, k -> new AtomicInteger(0));
+                LocalRequests.get(localAppName).incrementAndGet();
             }
         } catch (IOException e) {
             //e.printStackTrace();
@@ -255,8 +289,8 @@ public class Manager {
             //e.printStackTrace();
         }
 
-        System.out.println("Number of new tasks " + numberOfTasks + " added for " + localAppName);
-        return LocalRequests.get(localAppName);
+        System.out.println("Number of new tasks " + LocalRequests.get(localAppName).get() + " added for " + localAppName);
+        return LocalRequests.get(localAppName).get();
     }
 }
 

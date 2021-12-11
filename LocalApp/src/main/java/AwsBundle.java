@@ -217,7 +217,7 @@ public class AwsBundle {
                 .withImageId(imageId)
                 .withKeyName("vockey")
                 .withIamInstanceProfile(role)
-                .withInstanceType(InstanceType.T2Micro)
+                .withInstanceType(InstanceType.M4Large)
                 .withSecurityGroupIds("sg-02541f450554a7c98")
                 .withUserData(Base64.getEncoder().encodeToString(userDataScript.getBytes(UTF_8)))
                 .withMaxCount(1)

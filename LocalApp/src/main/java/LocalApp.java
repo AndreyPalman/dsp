@@ -6,6 +6,7 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Scanner;
 import java.util.UUID;
@@ -38,6 +39,9 @@ public class LocalApp {
     public static String aws_session_token = "";
 
     public static void main(String[] args) {
+
+        boolean ans = awsBundle.checkIfInstanceExist("Worker1");
+
         parseAwsCredentials();
         UUID localAppUuid = UUID.randomUUID();
         bucketName = AwsBundle.bucketName;
@@ -47,6 +51,8 @@ public class LocalApp {
         // If not, create Manager node
         if(!awsBundle.checkIfInstanceExist("Manager"))
         {
+            // Create Manager node
+            System.out.println("Creating Manager");
             createManager();
         }
 
@@ -62,7 +68,12 @@ public class LocalApp {
 
         // Checks an SQS queue for messages indicating the process is done and response ( summery file ) is available on S3
         while (!ProcessDoneMessageArrive) {
-            List<Message> messages = awsBundle.fetchNewMessages(localandmanagerqueueUrl);
+            List<Message> messages = null;
+            try {
+                messages = awsBundle.fetchNewMessages(localandmanagerqueueUrl);
+            }catch (Exception e) {
+                messages = new LinkedList<>();
+            }
             for (Message message : messages) {
                 if (message.getBody().split(AwsBundle.Delimiter)[0].equals("DoneTask")) {
                     endTime = LocalDateTime.now();
@@ -88,9 +99,9 @@ public class LocalApp {
                     } catch (Exception ignored) {}
                 }
             }
-            // sleep for 20 seconds
+            // sleep for 10 seconds
             try {
-                Thread.sleep(20000);
+                Thread.sleep(10000);
             } catch (InterruptedException e) {
                 //e.printStackTrace();
             }
@@ -167,16 +178,15 @@ public class LocalApp {
 
         String credentials = "[default]\n" + "region=" +region + "\n" + "aws_access_key_id=" + aws_access_key_id + "\n" + "aws_secret_access_key=" +aws_secret_access_key + "\n" + "aws_session_token=" + aws_session_token;
         String managerScript = String.format("#! /bin/bash\n" +
+                "Starting instance script\n" +
                 "sudo yum update -y\n" +
                 "aws s3 cp s3://%s/Manager.jar Manager.jar\n" +
-                String.format("export aws_region=%s\n", region ) +
-                String.format("export aws_access_key_id=%s\n", aws_access_key_id ) +
-                String.format("export aws_secret_access_key=%s\n", aws_secret_access_key ) +
-                String.format("export aws_session_token=%s\n", aws_session_token ) +
                 "mkdir .aws\n" +
                 "cd .aws\n" +
                 "echo $'" + credentials +  "' > credentials\n" +
+                "cat credentials\n" +
                 "cd ..\n" +
+                "echo Starting Manager instance\n" +
                 "java -jar Manager.jar %d\n",AwsBundle.bucketName, numberOfMessagesPerWorker);
 
         awsBundle.createInstance("Manager",AwsBundle.ami,managerScript);

@@ -34,6 +34,7 @@ public class Worker {
         }
         ExecutorService threadPool = Executors.newFixedThreadPool(MAX_T);
         String queueUrl = awsBundle.createMsgQueue(awsBundle.managerAndWorkerQueueName);
+        String doneQueueUrl = awsBundle.createMsgQueue(awsBundle.managerAndWorkerDoneQueueName);
 
         // Get a message from an SQS queue.
         while (!shouldTerminate) {
@@ -50,14 +51,19 @@ public class Worker {
 
                         if (messageType.equals("Terminate")) {
                             shouldTerminate = true;
-                            awsBundle.deleteQueue(queueUrl);
+                            try {
+                                awsBundle.deleteQueue(queueUrl);
+                                awsBundle.deleteQueue(doneQueueUrl);
+                            } catch (Exception e) {
+                                System.out.println("Error deleting queues");
+                            }
                             threadPool.shutdown();
                             System.out.println("Terminating worker");
                         } else if (messageType.equals("PdfTask")) {
                             // Download the PDF file indicated in the message.
                             // Perform the operation requested on the file.
                             awsBundle.deleteMessageFromQueue(queueUrl, message);
-                            Task t = new Task(fileName, operation, localAppName);
+                            Task t = new Task(fileName, operation, localAppName,queueUrl,message);
                             threadPool.execute(t);
                         }
                     }
@@ -70,158 +76,182 @@ public class Worker {
                 }
             }
         }
+        try {
+            //awsBundle.terminateCurrentInstance();
+        }catch (Exception ignored){}
+
     }
 }
 
 class Task implements Runnable {
     final static AwsBundle awsBundle = AwsBundle.getInstance();
+    private Message message;
+    private String queueUrl;
     public String fileName;
     public String ConvertMethod;
     public String localAppName;
 
-    public Task(String fileName, String ConvertMethod, String localAppName) {
+
+    public Task(String fileName, String ConvertMethod, String localAppName, String queueUrl, Message message) {
         this.fileName = fileName;
         this.ConvertMethod = ConvertMethod;
         this.localAppName = localAppName;
+        this.queueUrl = queueUrl;
+        this.message = message;
     }
 
     @Override
     public void run() {
-        IOException exception = new IOException("Exception in preforming operation");
-        String fileNameTrimmed = "";
-        String fileToDeletePath = "";
-        File file = null;
-        boolean taskCompleted = false;
         try {
-            fileNameTrimmed = fileName.substring(fileName.lastIndexOf("/") + 1, fileName.lastIndexOf(".pdf"));
-            String saveLocation = "./" + fileNameTrimmed + ".pdf";
-            fileToDeletePath = "";
-
-
-            System.out.println("Starting task for: " + fileName + " with method: " + ConvertMethod + " and operation: " + localAppName);
-
-            InputStream in = null;
+            IOException exception = new IOException("Exception in preforming operation");
+            String fileNameTrimmed = "";
+            String fileToDeletePath = "";
+            File file = null;
+            boolean taskCompleted = false;
             try {
-                in = new URL(fileName).openStream();
+                fileNameTrimmed = fileName.substring(fileName.lastIndexOf("/") + 1, fileName.lastIndexOf(".pdf"));
+                String saveLocation = "./" + fileNameTrimmed + ".pdf";
+                fileToDeletePath = "";
 
+
+                System.out.println("Starting task for: " + fileName + " with method: " + ConvertMethod + " and operation: " + localAppName);
+
+                InputStream in = null;
                 try {
-                    Files.copy(in, Paths.get(saveLocation), StandardCopyOption.REPLACE_EXISTING);
-                } catch (IOException e) {
-                    //e.printStackTrace();
-                    exception = e;
-                }
+                    in = new URL(fileName).openStream();
 
-            } catch (IOException e) {
-                //e.printStackTrace();
-                exception = e;
-            }
-
-
-            file = new File(saveLocation);
-            PDDocument document = null;
-            try {
-                document = PDDocument.load(file);
-                //Instantiating Splitter class
-                Splitter splitter = new Splitter();
-
-                //splitting the pages of a PDF document
-                List<PDDocument> Pages = null;
-                try {
-                    Pages = splitter.split(document);
-                    PDDocument page = Pages.get(0);
-                    PDFTextStripper pdfStripper = new PDFTextStripper();
-
-                    switch (ConvertMethod) {
-                        case "ToImage":
-                            //Instantiating the PDFRenderer class
-                            PDFRenderer renderer = new PDFRenderer(page);
-
-                            //Rendering an image from the PDF document
-                            BufferedImage image = renderer.renderImage(0);
-                            //Writing the image to a file
-                            fileToDeletePath = "./" + fileNameTrimmed + ".png";
-                            ImageIO.write(image, "PNG", new File("./" + fileNameTrimmed + ".png"));
-                            taskCompleted = true;
-                            break;
-                        case "ToText": {
-                            //Retrieving text from PDF document
-                            String text = pdfStripper.getText(page);
-
-                            try {
-                                fileToDeletePath = "./" + fileNameTrimmed + ".txt";
-                                FileWriter myWriter = new FileWriter("./" + fileNameTrimmed + ".txt");
-                                myWriter.write(text);
-                                myWriter.close();
-                            } catch (IOException e) {
-                                //e.printStackTrace();
-                                exception = e;
-                            }
-                            taskCompleted = true;
-                            break;
-                        }
-                        case "ToHTML": {
-
-                            //Retrieving text from PDF document
-                            String text = pdfStripper.getText(page);
-
-                            try {
-                                fileToDeletePath = "./" + fileNameTrimmed + ".html";
-                                FileWriter myWriter = new FileWriter("./" + fileNameTrimmed + ".html");
-                                myWriter.write(text);
-                                myWriter.close();
-                            } catch (IOException e) {
-                                //e.printStackTrace();
-                                exception = e;
-                            }
-                            taskCompleted = true;
-                            break;
-                        }
+                    try {
+                        Files.copy(in, Paths.get(saveLocation), StandardCopyOption.REPLACE_EXISTING);
+                    } catch (IOException e) {
+                        //e.printStackTrace();
+                        exception = e;
                     }
 
-
                 } catch (IOException e) {
                     //e.printStackTrace();
                     exception = e;
                 }
-            } catch (IOException e) {
-                //e.printStackTrace();
-                exception = e;
-            }
 
-            try {
-                if (document != null) {
-                    document.close();
+
+                file = new File(saveLocation);
+                PDDocument document = null;
+                try {
+                    document = PDDocument.load(file);
+                    //Instantiating Splitter class
+                    Splitter splitter = new Splitter();
+
+                    //splitting the pages of a PDF document
+                    List<PDDocument> Pages = null;
+                    try {
+                        Pages = splitter.split(document);
+                        PDDocument page = Pages.get(0);
+                        PDFTextStripper pdfStripper = new PDFTextStripper();
+
+                        switch (ConvertMethod) {
+                            case "ToImage":
+                                //Instantiating the PDFRenderer class
+                                PDFRenderer renderer = new PDFRenderer(page);
+
+                                //Rendering an image from the PDF document
+                                BufferedImage image = renderer.renderImage(0);
+                                //Writing the image to a file
+                                fileToDeletePath = "./" + fileNameTrimmed + ".png";
+                                ImageIO.write(image, "PNG", new File("./" + fileNameTrimmed + ".png"));
+                                taskCompleted = true;
+                                break;
+                            case "ToText": {
+                                //Retrieving text from PDF document
+                                String text = pdfStripper.getText(page);
+
+                                try {
+                                    fileToDeletePath = "./" + fileNameTrimmed + ".txt";
+                                    FileWriter myWriter = new FileWriter("./" + fileNameTrimmed + ".txt");
+                                    myWriter.write(text);
+                                    myWriter.close();
+                                } catch (IOException e) {
+                                    //e.printStackTrace();
+                                    exception = e;
+                                }
+                                taskCompleted = true;
+                                break;
+                            }
+                            case "ToHTML": {
+
+                                //Retrieving text from PDF document
+                                String text = pdfStripper.getText(page);
+
+                                try {
+                                    fileToDeletePath = "./" + fileNameTrimmed + ".html";
+                                    FileWriter myWriter = new FileWriter("./" + fileNameTrimmed + ".html");
+                                    myWriter.write(text);
+                                    myWriter.close();
+                                } catch (IOException e) {
+                                    //e.printStackTrace();
+                                    exception = e;
+                                }
+                                taskCompleted = true;
+                                break;
+                            }
+                        }
+
+
+                    } catch (IOException e) {
+                        //e.printStackTrace();
+                        exception = e;
+                    }
+                } catch (IOException e) {
+                    //e.printStackTrace();
+                    exception = e;
                 }
-            } catch (IOException e) {
-                //e.printStackTrace();
-                exception = e;
+
+                try {
+                    if (document != null) {
+                        document.close();
+                    }
+                } catch (IOException e) {
+                    //e.printStackTrace();
+                    exception = e;
+                }
+            } catch (Exception e) {
+                exception = new IOException("Error: " + e.getMessage());
             }
-        } catch (Exception e) {
-            exception =  new IOException("Error: " + e.getMessage());
-        }
+            if (taskCompleted) {
+                try {
+                    awsBundle.uploadFileToS3(AwsBundle.bucketName, fileNameTrimmed + localAppName, file);
+                    System.out.println("Task completed for: " + fileName + " uploaded to S3 and sending message to manager");
+                    awsBundle.sendMessage(
+                            awsBundle.managerAndWorkerDoneQueueName,
+                            awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter + fileNameTrimmed + localAppName + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
+                } catch (Exception e) {
+                    System.out.println("Task failed for: " + fileName + "Sending message to manager");
+                    awsBundle.sendMessage(
+                            awsBundle.managerAndWorkerDoneQueueName,
+                            awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter +
+                                    exception.getMessage() + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
+                }
 
-        if (taskCompleted) {
-            awsBundle.uploadFileToS3(AwsBundle.bucketName, fileNameTrimmed + localAppName, file);
-            System.out.println("Task completed for: " + fileName +" uploaded to S3 and sending message to manager");
+            } else {
+                System.out.println("Task failed for: " + fileName + "Sending message to manager");
+                awsBundle.sendMessage(
+                        awsBundle.managerAndWorkerDoneQueueName,
+                        awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter +
+                                exception.getMessage() + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
+            }
 
-            awsBundle.sendMessage(
-                    awsBundle.managerAndWorkerQueueName,
-                    awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter + fileNameTrimmed+localAppName + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
-        } else {
+            // delete file from instance
+            try {
+                boolean res = file.delete();
+                File f = new File(fileToDeletePath);
+                boolean originalRes = f.delete();
+            } catch (Exception e) {
+                //e.printStackTrace();
+            }
+        }catch (Exception e){
             System.out.println("Task failed for: " + fileName + "Sending message to manager");
             awsBundle.sendMessage(
-                    awsBundle.managerAndWorkerQueueName,
+                    awsBundle.managerAndWorkerDoneQueueName,
                     awsBundle.createMessage("DonePdfTask", localAppName + AwsBundle.Delimiter +
-                            exception.getMessage() + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
-        }
-
-        // delete file from instance
-        try {
-            boolean res = file.delete();
-            File f = new File(fileToDeletePath);
-            boolean originalRes = f.delete();
-        } catch (Exception e) {
-            //e.printStackTrace();
+                            e.getMessage() + AwsBundle.Delimiter + ConvertMethod + AwsBundle.Delimiter + fileName));
         }
     }
 }

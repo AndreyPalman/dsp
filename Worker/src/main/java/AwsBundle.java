@@ -28,6 +28,7 @@ public class AwsBundle {
 
     public final String localAndManagerQueueName = "localToManagerQueueName";
     public final String managerAndWorkerQueueName = "managerAndWorkerQueueName";
+    public final String managerAndWorkerDoneQueueName = "managerAndWorkerQueueNameDoneTaskQueue";
     public final String resultsWorkersQueueName = "resultsWorkersQueue";
 
     public static final String bucketName = "dspassignment1andreypalmans3bucket";
@@ -126,7 +127,6 @@ public class AwsBundle {
             this.s3.putObject(bucketName, keyName, fileToUpload);
         } catch (Exception e) {
             e.printStackTrace();
-            System.exit(1);
         }
     }
 
@@ -204,7 +204,8 @@ public class AwsBundle {
         ReceiveMessageRequest receiveRequest = new ReceiveMessageRequest()
                 .withQueueUrl(queueUrl)
                 .withMaxNumberOfMessages(1)
-                .withVisibilityTimeout(20);
+                .withWaitTimeSeconds(5)
+                .withVisibilityTimeout(10);
 
         return this.sqs.receiveMessage(receiveRequest).getMessages();
     }

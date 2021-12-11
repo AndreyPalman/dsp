@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.LinkedList;
 import java.util.List;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -28,6 +29,7 @@ public class AwsBundle {
 
     public final String localAndManagerQueueName = "localToManagerQueueName";
     public final String managerAndWorkerQueueName = "managerAndWorkerQueueName";
+    public final String managerAndWorkerDoneQueueName = "managerAndWorkerQueueNameDoneTaskQueue";
     public final String resultsWorkersQueueName = "resultsWorkersQueue";
 
     public static final String bucketName = "dspassignment1andreypalmans3bucket";
@@ -82,6 +84,38 @@ public class AwsBundle {
             }
         }
         return false;
+    }
+
+    public void terminateRunningAllWorkers() {
+        List<String> allWorkers = new LinkedList<>();
+        DescribeInstancesRequest describeInstancesRequest = new DescribeInstancesRequest();
+        DescribeInstancesResult describeInstancesResult = this.ec2.describeInstances(describeInstancesRequest);
+        for (Reservation r : describeInstancesResult.getReservations()) {
+            for (Instance i : r.getInstances()) {
+                if (!i.getState().getName().equals("running"))
+                    continue;
+                for (Tag t : i.getTags()) {
+                    if (t.getKey().equals("Name") && t.getValue().toLowerCase().contains("worker")) {
+                        allWorkers.add(i.getInstanceId());
+                    }
+                }
+            }
+        }
+        // print all workers ids
+        System.out.println("Workers to terminate: ");
+        for (String s : allWorkers) {
+            System.out.println(s);
+        }
+        for (String workerId : allWorkers) {
+            try {
+                TerminateInstancesRequest terminateInstancesRequest = new TerminateInstancesRequest();
+                terminateInstancesRequest.withInstanceIds(workerId);
+                this.ec2.terminateInstances(terminateInstancesRequest);
+            } catch (Exception e) {
+                System.out.println("Error terminating worker: " + workerId);
+                System.out.println(e.getMessage());
+            }
+        }
     }
 
     public String getMangerStatus() {
@@ -178,6 +212,7 @@ public class AwsBundle {
 
     public void deleteQueue(String queueName) {
         try {
+            System.out.println("deleting queue " + queueName);
             this.sqs.deleteQueue(new DeleteQueueRequest(queueName));
         } catch (AmazonS3Exception e) {
             e.printStackTrace();
@@ -203,8 +238,7 @@ public class AwsBundle {
     public List<Message> fetchNewMessages(String queueUrl) {
         ReceiveMessageRequest receiveRequest = new ReceiveMessageRequest()
                 .withQueueUrl(queueUrl)
-                .withMaxNumberOfMessages(1)
-                .withVisibilityTimeout(3);
+                .withMaxNumberOfMessages(1);
 
         return this.sqs.receiveMessage(receiveRequest).getMessages();
     }
@@ -231,7 +265,7 @@ public class AwsBundle {
                 .withImageId(imageId)
                 .withKeyName("vockey")
                 .withIamInstanceProfile(role)
-                .withInstanceType(InstanceType.T2Micro)
+                .withInstanceType(InstanceType.M4Large)
                 .withSecurityGroupIds("sg-02541f450554a7c98")
                 .withUserData(Base64.getEncoder().encodeToString(userDataScript.getBytes(UTF_8)))
                 .withMaxCount(1)

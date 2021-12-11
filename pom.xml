@@ -12,6 +12,7 @@
         <module>Worker</module>
         <module>LocalApp</module>
         <module>Manager</module>
+        <module>Test</module>
     </modules>
 
     <properties>
